@@ -2,87 +2,122 @@ import { useEffect, useRef, useState } from 'react';
 import WebSocket from 'isomorphic-ws';
 
 const useAssemblyAI = () => {
-  const ws = useRef(null);
-  const [transcript, setTranscript] = useState('');
-  const [error, setError] = useState(null);
+    const ws = useRef(null);
+    const [transcript, setTranscript] = useState('');
+    const [error, setError] = useState(null);
+    const [audioChunks, setAudioChunks] = useState([]);
+    const [mediaRecorder, setMediaRecorder] = useState(null);
 
-  useEffect(() => {
-    // Establish a WebSocket connection
-    ws.current = new WebSocket('wss://api.assemblyai.com/v2/realtime/ws', {
-      headers: {
-        Authorization: '<your-assemblyai-api-key>',
-      },
-    });
+    const startRecording = () => {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            const newMediaRecorder = new MediaRecorder(stream);
+            setMediaRecorder(newMediaRecorder);
+            newMediaRecorder.start();
 
-    // Handle incoming messages
-    ws.current.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.message_type === 'SessionBegins') {
-        console.log(`Session ID: ${message.session_id}`);
-        console.log(`Expires at: ${message.expires_at}`);
-      } else if (message.message_type === 'PartialTranscript') {
-        console.log(`Partial transcript received: ${message.text}`);
-        setTranscript(message.text);
-      } else if (message.message_type === 'FinalTranscript') {
-        console.log(`Final transcript received: ${message.text}`);
-        setTranscript(message.text);
-      }
+            newMediaRecorder.addEventListener('dataavailable', event => {
+                setAudioChunks((prevAudioChunks) => [...prevAudioChunks, event.data]);
+            });
+
+            newMediaRecorder.addEventListener('stop', () => {
+                const audioBlob = new Blob(audioChunks);
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                // Pass audioBlob to the startTranscription function
+                startTranscription(audioBlob);
+            });
+        });
     };
 
-    // Handle WebSocket errors
-    ws.current.onerror = (event) => {
-      console.log('WebSocket error', event);
-      setError(event.message);
+    const stopRecording = () => {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            setMediaRecorder(null);
+        }
     };
 
-    // Handle WebSocket close events
-    ws.current.onclose = () => {
-      console.log('WebSocket closed');
-    };
+    useEffect(() => {
+        // Replace with a call to your backend service to get the temporary token
+        fetch('https://cors-anywhere.herokuapp.com/https://api.assemblyai.com/v2/realtime/token', {
+            method: 'POST', // or 'POST'
+            headers: {
+              'Content-Type': 'application/json',
+              'authorization': process.env.REACT_APP_ASSEMBLY_AI_API_KEY
+            },
+            body: JSON.stringify({"expires_in": 600}), // data can be `string` or {object}!
+          })
+            .then(response => response.json())
+            .then(data => {
+                const token = data.token;
+                ws.current = new WebSocket(`wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${token}`);
 
-    return () => {
-      if (ws.current) {
+                ws.current.onopen = () => {
+                    console.log('WebSocket connection opened');
+                };
+        
+                ws.current.onmessage = (event) => {
+                    // Handle incoming messages
+                    const message = JSON.parse(event.data);
+                    if (message.message_type === 'PartialTranscript') {
+                        setTranscript(message.text);
+                    } else if (message.message_type === 'FinalTranscript') {
+                        setTranscript(message.text);
+                    }
+                };
+        
+                ws.current.onerror = (event) => {
+                    console.log('WebSocket error', event);
+                    setError(event.message);
+                };
+        
+                ws.current.onclose = () => {
+                    console.log('WebSocket closed');
+                };
+            });
+        
+        return () => {
+            // Close the WebSocket connection when the component unmounts
+            if (ws.current) {
+                ws.current.close();
+            }
+        };
+    }, []);
+    
+    const startTranscription = (audioData) => {
+        if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+            console.error('WebSocket connection not open');
+            return;
+        }
+    
+        // Send audio data over the WebSocket connection
+        sendAudio(audioData);
+    };    
+
+    const stopTranscription = () => {
+        if (!ws.current) {
+            console.error('WebSocket connection not available');
+            return;
+        }
+
+        // Send a message to terminate the session
+        const payload = { terminate_session: true };
+        ws.current.send(JSON.stringify(payload));
         ws.current.close();
-      }
     };
-  }, []);
 
-  const startTranscription = (sampleRate, audioData) => {
-    if (!ws.current) {
-      console.error('WebSocket connection not available');
-      return;
-    }
+    const sendAudio = (audioData) => {
+        if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+            console.error('WebSocket connection not open');
+            return;
+        }
 
-    // After opening the WebSocket connection, send an authentication header with your API token
-    ws.current.onopen = () => {
-      ws.current.send(
-        `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=${sampleRate}`
-      );
-      // Send audio data over the WebSocket connection
-      sendAudio(ws.current, audioData);
+        const payload = {
+            audio_data: Buffer.from(audioData).toString('base64'),
+        };
+        ws.current.send(JSON.stringify(payload));
     };
-  };
 
-  const stopTranscription = () => {
-    if (!ws.current) {
-      console.error('WebSocket connection not available');
-      return;
-    }
-
-    // Send a message to terminate the session
-    const payload = { terminate_session: true };
-    ws.current.send(JSON.stringify(payload));
-    ws.current.close();
-  };
-
-  const sendAudio = (ws, audioData) => {
-    const payload = {
-      audio_data: Buffer.from(audioData).toString('base64'),
-    };
-    ws.send(JSON.stringify(payload));
-  };
-
-  return { startTranscription, stopTranscription, transcript, error };
+    return { startTranscription, stopTranscription, startRecording, stopRecording, transcript, error };
 };
 
 export default useAssemblyAI
