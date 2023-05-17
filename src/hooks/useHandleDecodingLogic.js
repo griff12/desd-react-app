@@ -99,16 +99,14 @@ export const useHandleDecodingLogic = ({ startCountdown,
 
     const handleLogic = useCallback(() => {
         if (testWords[levelIndex] && correct >= words.length / 2) {
-          setReadingLevel(testWords[levelIndex].level);
-          setWrongAboveCurrentLevel(0);
-          setFrozenWrongAboveCurrentLevel(true);
+            setReadingLevel(testWords[levelIndex].level);
+            setWrongAboveCurrentLevel(0);
+            setFrozenWrongAboveCurrentLevel(true);
         }
     
         if (wrong >= words.length / 2 && wrongAboveCurrentLevel >= words.length && wordIndex >= words.length) {
-          setTestWords(testWords);
-          setTimeout(() => {
+            setTestWords(testWords);
             navigate('/eidetic');
-          }, 500);
         }
     
         if (isLastWord) {
