@@ -38,7 +38,7 @@ export const useHandleDecodingLogic = ({ startCountdown,
           // start recording
           startRecording();
           // Wait for the countdownPromise to resolve, then stop recording
-          await countdownPromise;
+          const _ = await countdownPromise;
           stopRecording();
           setSpeechResultReceived(true);
           // The transcript result from AssemblyAI will be available as `transcript`
