@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 export const useCountdown = (interval = 1000) => {
   const [count, setCount] = useState(null);
-  const [countdownFinished, setCountdownFinished] = useState(false);
+  const [countdownPromise, setCountdownPromise] = useState(null);
 
   useEffect(() => {
     if (count === null) {
@@ -10,7 +10,7 @@ export const useCountdown = (interval = 1000) => {
     }
 
     if (count === 0) {
-      setCountdownFinished(true);
+      countdownPromise?.resolve();
       return;
     }
 
@@ -19,24 +19,15 @@ export const useCountdown = (interval = 1000) => {
     }, interval);
 
     return () => clearInterval(timer);
-  }, [count, interval]);
+  }, [count, interval, countdownPromise]);
 
   const startCountdown = (initialValue) => {
     setCount(initialValue);
-    setCountdownFinished(false);
-  };
-
-  const countdownPromise = () => {
-    return new Promise((resolve) => {
-      if (countdownFinished) {
-        resolve();
-      }
-      const unsubscribe = setInterval(() => {
-        if (countdownFinished) {
-          resolve();
-          clearInterval(unsubscribe);
-        }
-      }, interval);
+    setCountdownPromise(() => {
+      let resolve;
+      const promise = new Promise((res) => resolve = res);
+      promise.resolve = resolve;
+      return promise;
     });
   };
 

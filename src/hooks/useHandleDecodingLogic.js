@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSpeechRecognition } from './useSpeechRecognition';
 import convertNumberToWords from '../utils/numToWord';
 import { useNavigate } from 'react-router-dom';
 import { useSessionStorage } from './useSessionStorage';
+import useSpeech from './useSpeech';
 
 export const useHandleDecodingLogic = ({ startCountdown, 
                                             countdownPromise,
@@ -25,25 +25,28 @@ export const useHandleDecodingLogic = ({ startCountdown,
     const [currentWord, setCurrentWord] = useState(words[wordIndex]);
     const lastLevelIndex = testWords.length - 1;
     const lastWordIndex = Object.keys(testWords[lastLevelIndex].words).length - 1;
-    const speechRecognition = useSpeechRecognition();
+    const { startRecording, stopRecording, transcript } = useSpeech();
     let speechResult;
 
     const nextDecodingWord = async () => {
-        speechRecognition.stopSpeechRecognition();
         setButtonActive(false);
         setSpeechResultReceived(false);
         setRetryMessage('');
 
         try {
-            startCountdown(3);
-            const speechRecognitionPromise = speechRecognition.recognizeSpeech();
-            const [speechReturn] = await Promise.all([speechRecognitionPromise, countdownPromise]);
-            setSpeechResultReceived(true);
-            speechResult = convertNumberToWords(speechReturn).toLowerCase();
-            console.log('Speech result:', speechResult);
+          startCountdown(3);
+          // start recording
+          startRecording();
+          // Wait for the countdownPromise to resolve, then stop recording
+          await countdownPromise;
+          stopRecording();
+          setSpeechResultReceived(true);
+          // The transcript result from AssemblyAI will be available as `transcript`
+          speechResult = convertNumberToWords(transcript).toLowerCase();
+          console.log('Speech result:', speechResult);
         } catch (error) {
-            console.error('Speech recognition error:', error);
-            return;
+          console.error('Speech recognition error:', error);
+          return;
         }
 
         let isCorrect;
@@ -96,14 +99,14 @@ export const useHandleDecodingLogic = ({ startCountdown,
 
     const handleLogic = useCallback(() => {
         if (testWords[levelIndex] && correct >= words.length / 2) {
-          setReadingLevel(testWords[levelIndex].level);
-          setWrongAboveCurrentLevel(0);
-          setFrozenWrongAboveCurrentLevel(true);
+            setReadingLevel(testWords[levelIndex].level);
+            setWrongAboveCurrentLevel(0);
+            setFrozenWrongAboveCurrentLevel(true);
         }
     
         if (wrong >= words.length / 2 && wrongAboveCurrentLevel >= words.length && wordIndex >= words.length) {
-          setTestWords(testWords);
-          navigate('/eidetic');;
+            setTestWords(testWords);
+            navigate('/eidetic');
         }
     
         if (isLastWord) {
